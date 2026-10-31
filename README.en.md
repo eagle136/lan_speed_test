@@ -2,6 +2,10 @@
 
 [中文](README.md) | English
 
+[![Release](https://img.shields.io/github/v/release/eagle136/lan_speed_test?sort=semver)](https://github.com/eagle136/lan_speed_test/releases)
+[![License](https://img.shields.io/github/license/eagle136/lan_speed_test)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-2f81f7)](#features)
+
 **Tell in 30 seconds what a wireless link can actually carry.**
 
 No server to deploy, no packet capture tool, no internet access, not a single byte of mobile data, no command line:
