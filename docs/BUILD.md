@@ -79,6 +79,9 @@ gradlew.bat assembleRelease -PndkPath=C:/android-ndk/android-ndk-r27c
 两者都不给时，AGP 会按 `ndkVersion` 在 `sdk.dir\ndk\27.2.12479018` 下找。
 `build.gradle.kts` 里不写死绝对路径，是为了让 CI 能编过——这是硬要求，改回去会直接让 release 流水线挂掉。
 
+`compileSdk` 同理支持覆盖：`gradlew.bat assembleRelease -PcompileSdk=36`。
+只在 CI 的 SDK 仓库还没有 API 37 时才会用到，`targetSdk` 不受影响（仍是 34）。
+
 ### 构建
 
 ```bat

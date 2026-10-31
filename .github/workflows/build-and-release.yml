@@ -55,35 +55,86 @@ jobs:
   # ------------------------------------------------------------------- Android
   android:
     name: Android (arm64-v8a)
-    runs-on: ubuntu-latest
+    # 固定 24.04：ubuntu-latest 在 2026-10 迁到 Ubuntu 26，Android 工具链在那边还没验证过
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
-      - uses: android-actions/setup-android@v3
-
-      - name: Install SDK / NDK packages
+      # 不依赖 android-actions/setup-android：直接用 runner 预装的 SDK，
+      # 缺什么用自带的 sdkmanager 补装。这样少一个第三方 action 的兼容面。
+      - name: Prepare Android SDK
         run: |
-          sdkmanager --licenses > /dev/null 2>&1 || true
-          # platform 37 的包名在不同 SDK 版本里可能是 android-37 或 android-37.0，两个都试
-          for pkg in "platforms;android-37.0" "platforms;android-37"; do
-            if sdkmanager --install "$pkg" "build-tools;36.0.0" "ndk;27.2.12479018" "platform-tools"; then
-              echo "installed with $pkg"; break
+          set -euo pipefail
+          {
+            echo "### Android SDK diagnostics"
+            echo '```'
+            echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
+            echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+            java -version 2>&1 | head -3
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SM="$(command -v sdkmanager || true)"
+          if [ -z "$SM" ]; then
+            SM="$(ls -1 "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1 || true)"
+          fi
+          echo "sdkmanager: ${SM:-NOT FOUND}" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$SM" ]; then
+            echo "::error::sdkmanager not found under $SDK"
+            ls -1 "$SDK" >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
+            exit 1
+          fi
+
+          yes | "$SM" --licenses > /dev/null 2>&1 || true
+          "$SM" --install "platform-tools" "build-tools;36.0.0" "ndk;27.2.12479018" 2>&1 | tail -3 || true
+
+          # compileSdk 37 在仓库里的包名可能是 android-37 或 android-37.0，先问仓库有什么再装
+          "$SM" --list 2>/dev/null | grep -oE 'platforms;android-[0-9]+(\.[0-9]+)?' \
+            | sort -uV > /tmp/platforms.txt || true
+          echo "### available platforms" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -12 /tmp/platforms.txt >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          PLATFORM="$(grep -E 'android-37' /tmp/platforms.txt | tail -1 || true)"
+          if [ -z "$PLATFORM" ]; then
+            # 仓库里还没有 API 37 时降级到 36 编译（targetSdk 仍是 34，运行行为不变）
+            PLATFORM="$(grep -E 'android-36' /tmp/platforms.txt | tail -1 || true)"
+            if [ -z "$PLATFORM" ]; then
+              echo "::error::neither android-37 nor android-36 is offered by the SDK repository"
+              exit 1
             fi
-          done
-          sdkmanager --list_installed | sed -n '1,40p'
+            echo "::warning::android-37 unavailable, compiling against android-36"
+            echo "GRADLE_EXTRA=-PcompileSdk=36" >> "$GITHUB_ENV"
+          fi
+          echo "installing $PLATFORM"
+          "$SM" --install "$PLATFORM" 2>&1 | tail -3
+          "$SM" --list_installed 2>/dev/null | tail -15 >> "$GITHUB_STEP_SUMMARY" || true
 
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Build release APK
         working-directory: android
         run: |
+          set -o pipefail
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --console=plain
+          ./gradlew assembleRelease --no-daemon --console=plain ${GRADLE_EXTRA:-} 2>&1 | tee /tmp/gradle.log
+
+      - name: Report build log
+        if: always()
+        run: |
+          {
+            echo "### Gradle log (tail 80)"
+            echo '```'
+            tail -80 /tmp/gradle.log 2>/dev/null || echo "no gradle log produced"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Rename artifact with version
         run: |

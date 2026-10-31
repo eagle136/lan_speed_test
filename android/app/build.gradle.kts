@@ -16,9 +16,13 @@ val ndkPathOverride: String? =
     ((project.findProperty("ndkPath") as String?) ?: localPropsMap["ndkPath"])
         ?.takeIf { it.isNotBlank() }
 
+// CI 上若 SDK 仓库还没有 API 37，可用 -PcompileSdk=36 降级编译；本机不传就用 37。
+val compileSdkOverride: Int? =
+    (project.findProperty("compileSdk") as String?)?.toIntOrNull()
+
 android {
     namespace = "com.eagle.lanspeed"
-    compileSdk = 37
+    compileSdk = compileSdkOverride ?: 37
     buildToolsVersion = "36.0.0"
     ndkVersion = "27.2.12479018"
     if (ndkPathOverride != null) {
