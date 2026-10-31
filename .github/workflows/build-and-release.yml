@@ -1,0 +1,126 @@
+name: build-and-release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------- Windows PC
+  pc:
+    name: Windows PC (MinGW)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MSYS2 / MinGW-w64 GCC
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc
+          path-type: inherit
+
+      - name: Core loopback self-test
+        shell: cmd
+        run: |
+          set "PATH=C:\msys64\mingw64\bin;%PATH%"
+          tests\build_and_run.bat 1
+
+      - name: Build PC client
+        shell: cmd
+        run: |
+          set "PATH=C:\msys64\mingw64\bin;%PATH%"
+          pc\build.bat
+
+      - name: Rename artifact with version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="dev"; fi
+          mkdir -p release
+          cp dist/LanSpeedTest-PC.exe "release/LanSpeedTest-PC-v${VERSION}.exe"
+          cd release && ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pc-release
+          path: release/*.exe
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------- Android
+  android:
+    name: Android (arm64-v8a)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK / NDK packages
+        run: |
+          sdkmanager --licenses > /dev/null 2>&1 || true
+          # platform 37 的包名在不同 SDK 版本里可能是 android-37 或 android-37.0，两个都试
+          for pkg in "platforms;android-37.0" "platforms;android-37"; do
+            if sdkmanager --install "$pkg" "build-tools;36.0.0" "ndk;27.2.12479018" "platform-tools"; then
+              echo "installed with $pkg"; break
+            fi
+          done
+          sdkmanager --list_installed | sed -n '1,40p'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --console=plain
+
+      - name: Rename artifact with version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="dev"; fi
+          mkdir -p release
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             "release/LanSpeedTest-Android-arm64-v${VERSION}.apk"
+          ls -l release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: release/*.apk
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------- Release
+  release:
+    name: Publish GitHub Release
+    needs: [pc, android]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd release && md5sum * > md5.txt && cat md5.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.exe
+            release/*.apk
+            release/md5.txt
+          generate_release_notes: true
+          fail_on_unmatched_files: true

@@ -1,0 +1,35 @@
+# ---- 构建产物 ----
+build/
+dist/
+out/
+obj/
+*.o
+*.obj
+*.so
+*.dll
+*.exe
+*.apk
+*.aab
+*.pdb
+*.ilk
+
+# ---- Android / Gradle ----
+.gradle/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+*.user
+
+# ---- 运行时日志 ----
+*.log
+lanspeed_log.txt

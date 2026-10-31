@@ -1,0 +1,21 @@
+# 统一换行符，避免 Windows 脚本在 CI 里因为 CRLF 出问题
+* text=auto
+
+*.c      text eol=lf
+*.h      text eol=lf
+*.java   text eol=lf
+*.kts    text eol=lf
+*.md     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.sh     text eol=lf
+
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
+gradlew.bat  text eol=crlf
+gradlew      text eol=lf
+
+*.png    binary
+*.apk    binary
+*.exe    binary
+*.jar    binary
